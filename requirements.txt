@@ -1,0 +1,15 @@
+python-dotenv
+streamlit
+
+# Working LangChain stack
+langchain
+langchain-community
+langchain-core
+langchain-google-genai
+
+# Embeddings + Vector DB
+sentence-transformers
+faiss-cpu
+
+# Gemini API
+google-generativeai
