@@ -1,15 +1,25 @@
-python-dotenv
-streamlit
+python-dotenv==1.0.0
+streamlit==1.29.0
 
-# Working LangChain stack
-langchain
-langchain-community
-langchain-core
-langchain-google-genai
+# LangChain ecosystem (matching Kaggle)
+langchain==0.2.16
+langchain-community==0.2.17
+langchain-core==0.2.40
+langchain-text-splitters==0.2.4
+langchain-google-genai==1.0.10
 
-# Embeddings + Vector DB
-sentence-transformers
-faiss-cpu
+# Embeddings + FAISS
+faiss-cpu==1.7.4
+sentence-transformers>=2.7.0
 
-# Gemini API
-google-generativeai
+# Google Generative AI SDK
+google-generativeai==0.7.2
+
+# Transformers (same as Kaggle)
+transformers==4.53.3
+
+# # Other essentials
+numpy
+pandas==2.1.4
+protobuf
+typing_extensions

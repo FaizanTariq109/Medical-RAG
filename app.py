@@ -34,7 +34,7 @@ if not GOOGLE_API_KEY:
 def load_rag_system():
     """Load the vector store and create RAG chain"""
     
-    # Load embeddings model (same as used in Kaggle)
+    # Load embeddings model
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
