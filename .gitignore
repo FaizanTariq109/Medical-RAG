@@ -1,2 +1,21 @@
 .env
 /venv
+# Local configuration and generated dependencies
+.env.*
+!.env.example
+!.env.*.example
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+.audit/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
+.venv*/
+.cache/
+.streamlit/secrets.toml

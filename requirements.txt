@@ -1,25 +1,18 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.8.0+cpu
 python-dotenv==1.0.0
-streamlit==1.29.0
-
-# LangChain ecosystem (matching Kaggle)
-langchain==0.2.16
-langchain-community==0.2.17
-langchain-core==0.2.40
-langchain-text-splitters==0.2.4
-langchain-google-genai==1.0.10
-
-# Embeddings + FAISS
+streamlit==1.39.0
+langchain==0.3.13
+langchain-community==0.3.13
+langchain-core==0.3.28
+langchain-text-splitters==0.3.4
+langchain-google-genai==2.0.6
+google-generativeai==0.8.3
+pydantic==2.10.4
 faiss-cpu==1.7.4
-sentence-transformers>=2.7.0
-
-# Google Generative AI SDK
-google-generativeai==0.7.2
-
-# Transformers (same as Kaggle)
+sentence-transformers==5.7.0
 transformers==4.53.3
-
-# # Other essentials
-numpy
+huggingface-hub==0.36.2
+numpy==1.26.4
 pandas==2.1.4
-protobuf
-typing_extensions
+protobuf==5.29.6

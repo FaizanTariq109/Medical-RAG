@@ -1,407 +1,103 @@
-# 🏥 Medical RAG QA System
+# Medical QA RAG
 
-A production-ready Retrieval Augmented Generation (RAG) system that answers medical questions using clinical transcriptions. Built with LangChain, FAISS, and Google Gemini API, this system provides accurate, citation-aware responses based on a corpus of 5,000+ medical transcriptions.
+An educational Streamlit application that retrieves passages from sample medical transcriptions and uses Google Gemini to explain the retrieved material with record references.
 
-## 🎯 Overview
+**Author:** Faizan Tariq. Individual university project, developed for Generative AI in semester 7.
 
-This RAG-powered medical assistant:
+**Status:** local retrieval and real Gemini smoke tests verified; failure/retry regression checks pass. Prepared for Streamlit Community Cloud; public deployment is pending.
 
-- **Retrieves** relevant information from 5,000+ clinical transcriptions
-- **Augments** context with medical specialty classifications and keywords
-- **Generates** accurate, evidence-based responses using Google Gemini
-- **Cites** source documents for transparency and verification
+## What it does
 
-### Key Features
+- Embeds questions locally with `sentence-transformers/all-MiniLM-L6-v2`.
+- Retrieves four chunks using the original FAISS index.
+- Supplies retrieved excerpts to Gemini through the original LangChain stuff-documents generation chain.
+- Requests record citations and an explicit insufficient-sources answer when the excerpts do not support a response.
+- Displays full retrieved excerpts with titles, specialties and corpus record IDs.
+- Supports downloadable answers, bounded questions and a shared generation cooldown.
+- Preserves the submitted question, record IDs, full excerpts and retrieval distances when Gemini fails.
+- Offers **Retry answer**, reusing that evidence without retrieving again or requiring re-entry.
 
-✅ **Semantic Search** - FAISS vector store for fast similarity search  
-✅ **Citation-Aware** - Every response includes source document references  
-✅ **Medical Specialties** - Organized by 40+ medical specialties  
-✅ **Interactive UI** - User-friendly Streamlit web interface  
-✅ **Evaluation Framework** - Tested on 30+ medical queries  
-✅ **Production Ready** - Complete error handling and logging
+The citation/abstention prompt is a preparation fix; it is not evidence that every generated answer is correct or properly grounded.
 
-## 📊 Dataset
+## Architecture
 
-**Medical Transcriptions Dataset** from Kaggle
+`Question → MiniLM embedding → FAISS retrieval → top-k clinical transcription chunks → Gemini → answer with source references`
 
-- **Source:** [Medical Transcriptions on Kaggle](https://www.kaggle.com/datasets/tboyle10/medicaltranscriptions)
-- **Size:** ~5,000 clinical transcriptions
-- **Specialties:** 40+ medical specialties (Surgery, Cardiology, Neurology, etc.)
-- **Columns:**
-  - `description` - Brief description of the transcription
-  - `medical_specialty` - Medical specialty classification
-  - `sample_name` - Transcription title
-  - `transcription` - Full medical transcription text
-  - `keywords` - Relevant medical keywords
+The original LangChain/FAISS/Gemini design and recovered index are preserved. `app.py` provides the Streamlit UI; `rag_runtime.py` handles verified index loading and the retrieval chain. Streamlit caches the CPU encoder/index and answer service. A per-service lock serializes generation and a ten-second cooldown reduces accidental repeated calls. This is not a distributed abuse-prevention system.
 
-## 🏗️ Architecture
+The saved index contains **29,598 vectors with 384 dimensions**. The processed CSV contains **4,966 rows**. Three sampled index vectors match embeddings regenerated from their saved chunks to a maximum absolute difference below 1.2e-7. These checks verify artifact compatibility, not answer quality.
 
-```
-User Query → Embedding → FAISS Search → Top-K Chunks →
-              ↓
-         Gemini LLM (with context) → Response + Citations
-```
+## Corpus and provenance
 
-### Components
+The original project attributes the corpus to [Tara Boyle's Medical Transcriptions dataset on Kaggle](https://www.kaggle.com/datasets/tboyle10/medicaltranscriptions), described by its publisher as sample transcriptions scraped from MTSamples. Kaggle lists CC0 for that dataset. The repository's MIT license applies to its code; third-party corpus attribution is retained separately and the underlying text has not undergone an independent privacy or rights audit.
 
-1. **Document Processing**
+The archived and GitHub FAISS files match byte-for-byte. Their CSV contents match after newline normalization. The archive changes the Gemini model and dependency versions, while the existing working copy has useful path/configuration repairs. The prepared version combines those fixes; it does not rebuild or retrain the original artifacts.
 
-   - Load and preprocess clinical transcriptions
-   - Combine relevant fields (specialty, keywords, transcription)
-   - Split into overlapping chunks (1000 chars, 200 overlap)
+No index-building notebook or preprocessing script was found in the project. The original preprocessing/chunking pipeline cannot currently be reproduced from source. Stored chunk lengths range from 14 to 1,000 characters; this observation does not establish the original splitting parameters. Multiple retrieved chunks may come from the same record.
 
-2. **Vector Store**
+## Run locally
 
-   - Sentence Transformers (all-MiniLM-L6-v2) for embeddings
-   - FAISS for efficient similarity search
-   - Metadata preservation for citations
+Use Python 3.11:
 
-3. **RAG Pipeline**
-
-   - RetrievalQA chain with Google Gemini
-   - Top-4 chunk retrieval for comprehensive context
-   - Temperature 0.3 for balanced factual responses
-
-4. **Streamlit Interface**
-   - Clean, intuitive medical query input
-   - Expandable source document viewer
-   - Copy-to-clipboard functionality
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Python 3.8 or higher
-- Google Gemini API key ([Get it free](https://makersuite.google.com/app/apikey))
-- ~2GB disk space for models and data
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/FaizanTariq109/Medical-RAG.git
-cd Medical-RAG
-
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
-# Windows:
-venv\Scripts\activate
-# Mac/Linux:
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
+```sh
+python -m venv .venv-medical
+# PowerShell:
+.venv-medical\Scripts\Activate.ps1
+# Linux/macOS:
+# source .venv-medical/bin/activate
+python -m pip install -r requirements.txt
+python -m streamlit run app.py
 ```
 
-### Configuration
+Create a local `.env` using `.env.example`, then set:
 
-Create a `.env` file in the project root:
-
-```env
-GEMINI_API_KEY=your_api_key_here
+```dotenv
+GOOGLE_API_KEY=your-own-key
+GEMINI_MODEL=gemini-3.1-flash-lite
 ```
 
-Or set it as an environment variable:
+The app loads `.env` from its own folder. On Streamlit Community Cloud, use the same names as root-level Secrets keys. Environment variables take precedence. Never commit the key or local secrets file.
 
-```bash
-# Windows
-set GEMINI_API_KEY=your_api_key_here
+The model ID is deliberately configurable. Use a text-generation model available to your API project and free-tier quota; availability can change. The app uses the archive-compatible LangChain generation integration. It does not silently switch models or enable paid billing.
 
-# Mac/Linux
-export GEMINI_API_KEY=your_api_key_here
+The embedding model is pinned to revision `1110a243fdf4706b3f48f1d95db1a4f5529b4d41`; its first load requires network access. The two original FAISS artifacts already exist in Git history and are retained. Their hashes are verified against `artifact-manifest.json` before loading trusted pickle metadata. Never replace these with untrusted uploaded indexes.
+
+## Provider availability and retry
+
+Retrieval completes independently of generation. Gemini 503 errors, rate limits, timeouts and service/quota errors display a concise notice while preserving source evidence. An explicit **Retry answer** action reruns only generation for the stored question. Editing the input does not silently change the question associated with existing results; submit a new question to retrieve new sources.
+
+There is no background retry loop. The pinned adapter can make at most two RPC attempts per action; each has a 45-second timeout and transport-level retries are disabled. A per-process lock and ten-second cooldown also apply. Missing Gemini configuration still permits retrieval. A genuine retrieval failure is reported separately and is never presented as a provider failure.
+
+## Privacy and limitations
+
+Questions and four retrieved excerpts are sent to Google Gemini. [Google's free-tier policy](https://ai.google.dev/gemini-api/docs/pricing) permits use of content to improve products. Use general, non-personal questions only; do not enter private health records or identifiers. The application does not write questions or answers to disk, but that does not describe the provider's retention policy.
+
+Sample transcriptions describe individual cases, not clinical guidelines. Responses may contain unsupported claims, omit context or miscite records. The prompt requests abstention, but FAISS always returns nearest neighbors, including for unrelated questions. Retrieval distance is not a calibrated confidence score. No accuracy, diagnosis, treatment, clinical safety or benchmark performance claim is made.
+
+Free API quotas may make the demo temporarily unavailable. Input is limited to 1,000 characters; generation is bounded to 768 output tokens with a 45-second per-attempt RPC timeout (the adapter may retry once). Slow embedding downloads and cloud memory limits need deployment testing.
+
+No clinical-performance benchmark has been established. The two real-provider questions are smoke tests, not a benchmark.
+
+## Validation and deployment
+
+See [VALIDATION.md](VALIDATION.md) for completed checks and their limits, and [DEPLOYMENT.md](DEPLOYMENT.md) for account and hosting steps.
+
+The earlier README described absent rebuilding/evaluation files and unsupported metrics. Those are not advertised as working features. `test.py` is an import smoke check, not a benchmark.
+
+## Cloud resource preparation
+
+Entrypoint: `app.py`; requirements: root `requirements.txt`; Python: **3.11**. No custom `.streamlit/config.toml` is required. Configure `GOOGLE_API_KEY` and `GEMINI_MODEL="gemini-3.1-flash-lite"` in Streamlit Secrets.
+
+The tracked source/artifacts total approximately 104.8 MB; the Git pack is 41.05 MiB. The FAISS index is 45.46 MB, its document metadata is 25.07 MB, and the CSV is 34.28 MB. These files already exist in repository history and are unchanged. Runtime does not read the CSV. The downloaded embedding cache measured 91.58 MB. Environments, local caches, credentials and audit files are excluded.
+
+A fresh Windows process using the downloaded embedding cache loaded the encoder/index in 10.14 seconds. Working set was about 530 MiB after loading and 578 MiB after retrieval. These are local measurements, not cloud guarantees. Linux x86-64/Python 3.11 dependency resolution passed; a Linux runtime was unavailable locally, so the actual Linux build and cloud resource behavior must be verified on Streamlit.
+
+The first hosted query downloads the pinned public embedding model; later queries reuse Streamlit's resource cache. Restarting a process reloads the model/index; a fresh host/cache downloads the embedding artifacts again. Model download or retrieval failures remain distinct from generation outages.
+
+## Tests
+
+```sh
+python -m unittest discover -s tests -v
 ```
 
-### Run the Application
-
-```bash
-# Step 1: Process data and build vector store (one-time setup)
-python build_vectorstore.py
-
-# Step 2: Launch Streamlit app
-streamlit run app.py
-```
-
-The app will open at `http://localhost:8501`
-
-## 📁 Project Structure
-
-```
-Medical-RAG/
-│
-├── app.py                      # Streamlit web interface
-├── build_vectorstore.py        # Vector store creation script
-├── requirements.txt            # Python dependencies
-├── .env                        # API key configuration (create this)
-├── .gitignore                  # Git ignore rules
-│
-├── data/
-│   └── mtsamples.csv          # Medical transcriptions dataset
-│
-├── vectorstore/
-│   └── faiss_index/           # FAISS vector store (generated)
-│
-├── utils/
-│   ├── __init__.py
-│   ├── data_loader.py         # Dataset loading and preprocessing
-│   ├── embeddings.py          # Embedding generation
-│   └── rag_chain.py           # RAG pipeline setup
-│
-├── evaluation/
-│   ├── test_queries.py        # 30+ test medical queries
-│   └── evaluate.py            # Evaluation framework
-│
-└── README.md                  # This file
-```
-
-## 💻 Usage Examples
-
-### Example 1: Simple Medical Query
-
-**Query:** "What are the symptoms of type 2 diabetes?"
-
-**Response:**
-
-```
-Common symptoms of type 2 diabetes include:
-- Increased thirst and frequent urination
-- Increased hunger
-- Unintended weight loss
-- Fatigue and weakness
-- Blurred vision
-- Slow-healing sores
-- Frequent infections
-
-Source Documents:
-1. SOAP_Endocrinology_47.txt
-2. Discharge_Summary_Diabetes_102.txt
-```
-
-### Example 2: Procedure Information
-
-**Query:** "How is a coronary artery bypass performed?"
-
-**Response:**
-
-```
-Coronary artery bypass grafting (CABG) is performed by:
-1. General anesthesia administration
-2. Median sternotomy incision
-3. Harvesting graft vessel (typically saphenous vein or internal mammary artery)
-4. Cardiopulmonary bypass initiation
-5. Grafting vessels to bypass blocked coronary arteries
-6. Weaning from bypass
-7. Chest closure
-
-Source Documents:
-1. Operative_Note_CABG_234.txt
-2. Consultation_Cardiology_156.txt
-```
-
-### Example 3: Differential Diagnosis
-
-**Query:** "What conditions should be considered for chest pain?"
-
-**Response:**
-
-```
-Differential diagnosis for chest pain includes:
-
-Cardiac: Angina, myocardial infarction, pericarditis
-Pulmonary: Pulmonary embolism, pneumonia, pleuritis
-Gastrointestinal: GERD, esophageal spasm, peptic ulcer
-Musculoskeletal: Costochondritis, muscle strain
-Other: Anxiety, panic disorder
-
-Evaluation should include ECG, cardiac enzymes, and chest X-ray.
-
-Source Documents:
-1. Emergency_Department_Note_089.txt
-2. Consultation_Cardiology_203.txt
-```
-
-## 🧪 Evaluation
-
-The system has been evaluated on 30+ diverse medical queries covering:
-
-- **Symptoms & Diagnosis** (e.g., "What are signs of pneumonia?")
-- **Treatment Procedures** (e.g., "How is appendicitis treated?")
-- **Medication Information** (e.g., "What are side effects of metformin?")
-- **Anatomical Questions** (e.g., "What is the function of the liver?")
-
-### Evaluation Metrics
-
-```python
-# Run evaluation
-python evaluation/evaluate.py
-
-# Sample output:
-Total Queries: 30
-Average Response Time: 2.3s
-Source Citation Rate: 100%
-Relevant Response Rate: 93.3%
-```
-
-### Run Your Own Evaluation
-
-```python
-from evaluation.test_queries import medical_queries
-from utils.rag_chain import get_rag_chain
-
-# Load RAG chain
-qa_chain = get_rag_chain()
-
-# Test queries
-for query in medical_queries:
-    result = qa_chain({"query": query})
-    print(f"Q: {query}")
-    print(f"A: {result['result']}")
-    print(f"Sources: {len(result['source_documents'])}")
-    print("-" * 80)
-```
-
-## 🛠️ Configuration
-
-### Adjust Chunk Size
-
-In `build_vectorstore.py`:
-
-```python
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000,      # Increase for more context per chunk
-    chunk_overlap=200,    # Increase to prevent splitting mid-sentence
-    length_function=len,
-)
-```
-
-### Change Number of Retrieved Documents
-
-In `utils/rag_chain.py`:
-
-```python
-retriever = vectorstore.as_retriever(
-    search_type="similarity",
-    search_kwargs={"k": 4}  # Retrieve top 4 chunks (default)
-)
-```
-
-### Adjust LLM Temperature
-
-In `utils/rag_chain.py`:
-
-```python
-llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-flash",
-    temperature=0.3,  # Lower = more focused, Higher = more creative
-)
-```
-
-## 📊 Performance
-
-| Metric              | Value                 |
-| ------------------- | --------------------- |
-| Dataset Size        | 5,000+ transcriptions |
-| Vector Store Size   | ~150MB                |
-| Average Query Time  | 2-3 seconds           |
-| Embedding Dimension | 384                   |
-| Total Chunks        | ~25,000               |
-| Specialties Covered | 40+                   |
-
-## 🔧 Troubleshooting
-
-### "API key not found"
-
-```bash
-# Make sure .env file exists with:
-GEMINI_API_KEY=your_actual_key_here
-```
-
-### "Vector store not found"
-
-```bash
-# Run the build script first:
-python build_vectorstore.py
-```
-
-### Slow query responses
-
-```python
-# Reduce number of retrieved chunks in rag_chain.py:
-search_kwargs={"k": 2}  # Instead of 4
-```
-
-### Out of memory
-
-```python
-# Process fewer documents in build_vectorstore.py:
-df = df.head(1000)  # Only use first 1000 transcriptions
-```
-
-## 🚨 Important Disclaimers
-
-⚠️ **Medical Disclaimer:** This system is for educational and informational purposes only. It should NOT be used as a substitute for professional medical advice, diagnosis, or treatment. Always consult qualified healthcare providers for medical decisions.
-
-⚠️ **Accuracy:** While the system provides evidence-based responses with citations, medical information can become outdated, and the AI may occasionally generate incorrect information. Always verify critical information with authoritative medical sources.
-
-⚠️ **Privacy:** Do not input personal health information or identifiable patient data into this system.
-
-## 🤝 Contributing
-
-Contributions are welcome! Areas for improvement:
-
-- [ ] Add medical fact-checking layer
-- [ ] Implement multi-query retrieval
-- [ ] Add medical terminology disambiguation
-- [ ] Create mobile-responsive UI
-- [ ] Add conversation memory
-- [ ] Implement user feedback mechanism
-
-### How to Contribute
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📚 Technical Stack
-
-- **LangChain** - RAG framework and orchestration
-- **FAISS** - Vector similarity search
-- **Sentence Transformers** - Text embeddings
-- **Google Gemini** - Large language model
-- **Streamlit** - Web interface
-- **Pandas** - Data processing
-- **Python 3.8+** - Core programming language
-
-## 📖 Learn More
-
-### Related Papers
-
-- ["Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks"](https://arxiv.org/abs/2005.11401)
-- ["Dense Passage Retrieval for Open-Domain Question Answering"](https://arxiv.org/abs/2004.04906)
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 👨‍💻 Author
-
-**Faizan Tariq**
-
-- GitHub: [@FaizanTariq109](https://github.com/FaizanTariq109)
-- LinkedIn: [faizan-109t](https://www.linkedin.com/in/faizan-109t/)
-- Email: faizan3san@gmail.com
-
-## 🙏 Acknowledgments
-
-- **Dataset:** Medical Transcriptions Dataset from Kaggle
-- **LangChain:** For the excellent RAG framework
-- **Google:** For the Gemini API
-- **Sentence Transformers:** For the embedding models
-- **Streamlit:** For the intuitive UI framework
-
----
-
-**Note:** This is an educational project demonstrating RAG systems for medical information retrieval. Always consult healthcare professionals for medical advice.
+Regression tests simulate provider failures and recovery without using a real key or making network requests. They check evidence preservation, retry reuse, blank input, missing configuration and sanitized errors. Real-provider smoke-test observations are summarized in VALIDATION.md; local audit files are not published.

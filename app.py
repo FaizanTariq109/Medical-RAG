@@ -1,131 +1,113 @@
-import streamlit as st
+"""Educational RAG demo: preserve retrieval evidence independently of generation."""
+import logging
 import os
+from pathlib import Path
+import streamlit as st
 from dotenv import load_dotenv
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.chains import RetrievalQA
+from rag_runtime import AnswerService, load_vectorstore, retrieve, MAX_QUESTION_LENGTH
 
-load_dotenv()
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / '.env')
+# Provider retry logs may contain raw API error text. Log only exception types here.
+logging.getLogger('langchain_google_genai').setLevel(logging.CRITICAL)
+st.set_page_config(page_title='Medical QA RAG', page_icon='📚', layout='wide')
+st.title('Medical QA RAG')
+st.write('Explore historical medical transcriptions with source-referenced question answering.')
+st.caption('Educational demonstration only. This system retrieves from a historical medical-transcription dataset and is not a substitute for professional medical advice.')
+st.caption('An individual university project by Faizan Tariq.')
+st.info('Do not enter personal health information. Questions and retrieved excerpts are sent to Google Gemini; free-tier content may be used to improve Google products.')
 
-# Page configuration
-st.set_page_config(
-    page_title="Medical QA Assistant",
-    page_icon="🏥",
-    layout="wide"
-)
 
-# Title and description
-st.title("🏥 Medical QA Assistant")
-st.markdown("""
-This RAG-powered system answers medical questions based on clinical transcriptions.
-Ask questions about symptoms, procedures, diagnoses, or treatments.
-""")
+def setting(name):
+    if name in os.environ:
+        return os.environ[name]
+    if st.secrets.load_if_toml_exists():
+        return str(st.secrets.get(name, ''))
+    return ''
 
-# Load API key from environment variable
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-if not GOOGLE_API_KEY:
-    st.error("⚠️ GOOGLE_API_KEY not found in environment variables!")
-    st.stop()
+@st.cache_resource(show_spinner=False)
+def cached_store():
+    return load_vectorstore()
 
-# Initialize components (cached to avoid reloading)
-@st.cache_resource
-def load_rag_system():
-    """Load the vector store and create RAG chain"""
-    
-    # Load embeddings model
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
-    
-    # Load the saved vector store
-    vectorstore = FAISS.load_local(
-        "faiss_medical_index",
-        embeddings,
-        allow_dangerous_deserialization=True  # Required for loading pickled data
-    )
-    
-    # Initialize Gemini
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
-        temperature=0.3,
-        google_api_key=GOOGLE_API_KEY
-    )
-    
-    # Create retriever
-    retriever = vectorstore.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": 4}
-    )
-    
-    # Create QA chain
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        return_source_documents=True
-    )
-    
-    return qa_chain
 
-# Load the system
-try:
-    with st.spinner("Loading RAG system..."):
-        qa_chain = load_rag_system()
-    st.success("✓ System ready!")
-except Exception as e:
-    st.error(f"Error loading system: {str(e)}")
-    st.stop()
+@st.cache_resource(show_spinner=False)
+def cached_service(api_key, model):
+    return AnswerService(cached_store(), api_key, model)
 
-# Create two columns for layout
-col1, col2 = st.columns([2, 1])
 
-with col1:
-    # User input
-    question = st.text_area(
-        "Enter your medical question:",
-        height=100,
-        placeholder="e.g., What are the symptoms of type 2 diabetes?"
-    )
-    
-    # Ask button
-    ask_button = st.button("🔍 Get Answer", type="primary")
+def use_example():
+    st.session_state['question'] = 'What procedures are described for knee arthroscopy?'
 
-with col2:
-    st.markdown("### Example Questions:")
-    st.markdown("""
-    - What are symptoms of diabetes?
-    - How is hypertension treated?
-    - What procedures are used for knee surgery?
-    - What are complications of pneumonia?
-    """)
 
-# Process question
-if ask_button and question:
-    with st.spinner("Searching medical records and generating answer..."):
+def generate_answer():
+    evidence = st.session_state['evidence']
+    st.session_state.pop('answer', None)
+    api_key, model = setting('GOOGLE_API_KEY'), setting('GEMINI_MODEL')
+    if not api_key or not model:
+        st.session_state['generation_notice'] = 'Answer generation is not configured. You can still explore the retrieved sources below.'
+        return
+    try:
+        with st.spinner('Generating an answer from the retrieved sources…'):
+            st.session_state['answer'] = cached_service(api_key, model).generate(evidence)
+        st.session_state.pop('generation_notice', None)
+    except Exception as exc:
+        logging.error('Medical RAG generation failed (%s)', type(exc).__name__)
+        if isinstance(exc, RuntimeError) and str(exc) in ('BUSY', 'COOLDOWN'):
+            notice = 'The shared demo is busy. Your retrieved sources are preserved; please retry shortly.'
+        else:
+            notice = 'The generation service is temporarily unavailable. The relevant retrieved sources are shown below; please try generating the answer again shortly.'
+        st.session_state['generation_notice'] = notice
+
+
+st.button('Use example question', on_click=use_example)
+with st.form('question_form'):
+    question = st.text_area('Question about the sample documents', key='question', height=110,
+                            max_chars=MAX_QUESTION_LENGTH,
+                            placeholder='What procedures are described for knee arthroscopy?')
+    submitted = st.form_submit_button('Get answer', type='primary')
+
+if submitted:
+    if not question.strip():
+        st.warning('Enter a question first.')
+    else:
+        for name in ('evidence', 'answer', 'generation_notice'):
+            st.session_state.pop(name, None)
         try:
-            result = qa_chain({"query": question})
-            
-            # Display answer
-            st.markdown("### 💡 Answer:")
-            st.info(result['result'])
-            
-            # Display sources
-            st.markdown("### 📚 Source Documents:")
-            for i, doc in enumerate(result['source_documents'], 1):
-                with st.expander(f"Source {i}: {doc.metadata.get('title', 'Unknown')}"):
-                    st.markdown(f"**Specialty:** {doc.metadata.get('specialty', 'Unknown')}")
-                    st.markdown(f"**Keywords:** {doc.metadata.get('keywords', 'N/A')}")
-                    st.markdown("**Content:**")
-                    st.text(doc.page_content[:500] + "..." if len(doc.page_content) > 500 else doc.page_content)
-                    
-        except Exception as e:
-            st.error(f"Error generating answer: {str(e)}")
+            with st.spinner('Retrieving relevant excerpts…'):
+                st.session_state['evidence'] = retrieve(cached_store(), question)
+        except Exception as exc:
+            logging.error('Medical RAG retrieval failed (%s)', type(exc).__name__)
+            st.error('The source collection could not be loaded. Please try again later.')
+        else:
+            generate_answer()
 
-elif ask_button:
-    st.warning("⚠️ Please enter a question first!")
+if 'evidence' in st.session_state:
+    evidence = st.session_state['evidence']
+    st.subheader('Results for your submitted question')
+    st.write(evidence['question'])
+    if 'answer' not in st.session_state:
+        if st.button('Retry answer', help='Reuse the same question and retrieved excerpts.'):
+            generate_answer()
+    if 'generation_notice' in st.session_state:
+        st.warning(st.session_state['generation_notice'])
+    if 'answer' in st.session_state:
+        st.subheader('Answer')
+        st.write(st.session_state['answer'])
+        st.caption('Generated text can contain errors. Compare each claim with the retrieved excerpts below.')
+        st.download_button('Download answer', st.session_state['answer'], 'medical-rag-answer.txt', mime='text/plain')
+    st.subheader('Retrieved sources')
+    st.caption(f"{len(evidence['documents'])} chunks · MiniLM embeddings · FAISS similarity retrieval")
+    for i, (doc, distance) in enumerate(zip(evidence['documents'], evidence['distances']), 1):
+        title = str(doc.metadata.get('title', 'Untitled')).strip()
+        record = doc.metadata.get('row_id', 'Unknown')
+        with st.expander(f'{i}. {title} — record {record}'):
+            st.text(f"Specialty: {doc.metadata.get('specialty', 'Unknown')}")
+            st.caption(f'Retrieval rank: {i} · Squared L2 distance: {distance:.3f} (lower is nearer; not a confidence score)')
+            st.text(doc.page_content)
+    st.caption('Nearest neighbors can be irrelevant, and multiple chunks may repeat the same record. Source references do not establish clinical correctness.')
 
-# Footer
-st.markdown("---")
-st.markdown("*Powered by LangChain, FAISS, and Google Gemini*")
+with st.expander('About this project'):
+    st.write('Question → MiniLM embedding → FAISS retrieval → top-k clinical transcription chunks → Gemini → answer with source references')
+    st.write('4,966 source records; 29,598 saved chunks; 384-dimensional vectors. The recovered dataset and index are unchanged.')
+    st.caption('No clinical-performance benchmark has been established. The application does not write questions or answers to disk. Retrieval remains visible when the generation provider is unavailable.')
