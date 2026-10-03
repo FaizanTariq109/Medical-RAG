@@ -4,7 +4,9 @@ An educational Streamlit application that retrieves passages from sample medical
 
 **Author:** Faizan Tariq. Individual university project, developed for Generative AI in semester 7.
 
-**Status:** local retrieval and real Gemini smoke tests verified; failure/retry regression checks pass. Prepared for Streamlit Community Cloud; public deployment is pending.
+**Status:** local retrieval and real Gemini smoke tests verified; failure/retry regression checks pass. Deployed on Streamlit Community Cloud and tested by the project owner.
+
+**Live Demo:** [Medical QA RAG](https://faizan-medical-rag.streamlit.app/)
 
 ## What it does
 
